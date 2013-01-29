@@ -44,7 +44,7 @@ int main(int argc, char *argv[]){
             if(id_usb_driver != NULL && !strcmp(id_usb_driver, "cdc_ether")){
                 interface = udev_device_get_property_value(dev_info, "INTERFACE");
                 printf("Path %s\n", udev_list_entry_get_name(dev));
-                printf("Driver %s\n", id_usb_driver);
+                //printf("Driver %s\n", id_usb_driver);
                 printf("Interface %s\n", interface);
             }
             udev_device_unref(dev_info);

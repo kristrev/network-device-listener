@@ -135,13 +135,13 @@ int main(int argc, char *argv[]){
     dev_first = udev_enumerate_get_list_entry(ue_context);
 
     udev_list_entry_foreach(dev, dev_first){
-        //printf("Name %s Value %s\n", udev_list_entry_get_name(dev), udev_list_entry_get_value(dev)); 
+        printf("Name %s Value %s\n", udev_list_entry_get_name(dev), udev_list_entry_get_value(dev)); 
         if((dev_info = udev_device_new_from_syspath(u_context, udev_list_entry_get_name(dev))) == NULL)
             continue;
         else{
             id_usb_driver =  udev_device_get_property_value(dev_info, "ID_USB_DRIVER");
 
-            if(id_usb_driver != NULL && !strcmp(id_usb_driver, "cdc_ether")){
+            if(id_usb_driver != NULL && (!strcmp(id_usb_driver, "cdc_ether") || !strcmp(id_usb_driver, "asix"))){
                 interface = udev_device_get_property_value(dev_info, "INTERFACE");
                 ifindex = udev_device_get_property_value(dev_info, "IFINDEX");
                 printf("Path %s\n", udev_list_entry_get_name(dev));

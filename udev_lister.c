@@ -10,6 +10,39 @@
 #include <linux/rtnetlink.h>
 #include <sys/socket.h>
 #include <net/if.h>
+#include <sys/ioctl.h>
+#include <string.h>
+
+void set_interface_up_ioctl(const char *devname){
+    struct ifreq ifr;
+    int32_t fd;
+
+    memcpy(ifr.ifr_name, devname, IFNAMSIZ);
+    ifr.ifr_flags = IFF_UP;
+
+    //PF_INET == AF_INET
+    if((fd = socket(PF_INET, SOCK_DGRAM, 0)) < 0){
+        perror("socket: ");
+        return;
+    }
+
+    //Get the flags, so that I am sure I dont overwrite anything
+    if(ioctl(fd, SIOCGIFFLAGS, &ifr) < 0){
+        perror("ioctl (get): ");
+        return;
+    }
+
+    //I need to "remove" IFF_UP, therefore, use AND
+    if(ifr.ifr_flags & IFF_UP)
+        ifr.ifr_flags &= ~IFF_UP;
+    else
+        ifr.ifr_flags |= IFF_UP;
+
+    if(ioctl(fd, SIOCSIFFLAGS, &ifr) < 0){
+        perror("ioctl (set): ");
+        return;
+    }
+}
 
 void set_interface_up_netlink(int32_t ifi_idx){
     struct mnl_socket *mnls = NULL;
@@ -116,7 +149,8 @@ int main(int argc, char *argv[]){
                 printf("Interface %s\n", interface);
                 if_idx = atoi(ifindex);
                 printf("Index %d\n", if_idx);
-                set_interface_up_netlink(if_idx);
+                set_interface_up_ioctl(interface);
+                //set_interface_up_netlink(if_idx);
             }
             udev_device_unref(dev_info);
         }

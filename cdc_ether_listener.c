@@ -110,8 +110,8 @@ uint8_t monitor_devices(struct udev *u_context){
     struct udev_device *device = NULL;
 
     //Acquire context, add filter and bind to start receiving
-    //For some reason, udev does not always broadcast events about added
-    //devices, therefore I have to listen to kernel
+    //Some devices (particularily some modems) are not configured by udev
+    //(why?), so I need to listen to kernel to get a reliable notification.
     if((u_monitor = udev_monitor_new_from_netlink(u_context, "kernel")) == 0){
         fprintf(stderr, "Could not get udev monitor\n");
         return -1;

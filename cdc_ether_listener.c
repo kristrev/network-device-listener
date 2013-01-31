@@ -31,7 +31,7 @@ uint8_t set_interface_up_ioctl(const char *devname){
     }
 
     //Only set up if needed
-    if(!ifr.ifr_flags & IFF_UP){
+    if(!(ifr.ifr_flags & IFF_UP)){
         ifr.ifr_flags |= IFF_UP;
         
         if(ioctl(fd, SIOCSIFFLAGS, &ifr) < 0){
@@ -44,25 +44,20 @@ uint8_t set_interface_up_ioctl(const char *devname){
     return 0;
 }
 
-void check_device(struct udev_device *device){
+void configure_device(struct udev_device *device){
     const char *id_usb_driver = NULL;
     const char *interface = NULL;
     const char *ifindex = NULL;
     int32_t if_idx = 0;
-
-    id_usb_driver =  udev_device_get_property_value(device, 
-            "ID_USB_DRIVER");
-
-    if(id_usb_driver != NULL && (!strcmp(id_usb_driver, "cdc_ether"))){
-        interface = udev_device_get_property_value(device, 
+        
+    interface = udev_device_get_property_value(device, 
             "INTERFACE");
-        ifindex = udev_device_get_property_value(device, "IFINDEX");
-        if_idx = atoi(ifindex);
-        printf("Found interface %s (idx %d). Will change state if "
-                "needed\n", interface, if_idx);
-        if(set_interface_up_ioctl(interface))
-            fprintf(stderr, "Could not complete set_up on interface\n");
-    }
+    ifindex = udev_device_get_property_value(device, "IFINDEX");
+    if_idx = atoi(ifindex);
+    fprintf(stderr, "Found interface %s (idx %d). Will change state if "
+            "needed\n", interface, if_idx);
+    if(set_interface_up_ioctl(interface))
+        fprintf(stderr, "Could not complete set_up on interface\n");
 }
 
 //Check for existing cdc_ether interfaces and set them as up
@@ -98,7 +93,7 @@ uint8_t check_for_existing_devices(struct udev *u_context){
                         udev_list_entry_get_name(dev))) == NULL)
             continue;
         else{
-            check_device(dev_info);
+            configure_device(dev_info);
             udev_device_unref(dev_info);
         }
     }
@@ -115,7 +110,9 @@ uint8_t monitor_devices(struct udev *u_context){
     struct udev_device *device = NULL;
 
     //Acquire context, add filter and bind to start receiving
-    if((u_monitor = udev_monitor_new_from_netlink(u_context, "udev")) == 0){
+    //For some reason, udev does not always broadcast events about added
+    //devices, therefore I have to listen to kernel
+    if((u_monitor = udev_monitor_new_from_netlink(u_context, "kernel")) == 0){
         fprintf(stderr, "Could not get udev monitor\n");
         return -1;
     }
@@ -157,12 +154,11 @@ uint8_t monitor_devices(struct udev *u_context){
             udev_monitor_unref(u_monitor);
             return -1;
         } else {
-            if((device = udev_monitor_receive_device(u_monitor)) == NULL)
-                fprintf(stderr, "Could not get information about device\n");
-            else {
-                printf("Action %s\n", udev_device_get_action(device));
-                printf("Devtype %s\n", udev_device_get_devtype(device));
-                //fprintf(stderr, "Got some information\n");
+            if((device = udev_monitor_receive_device(u_monitor)) != NULL){
+                if(!strcmp("add", udev_device_get_action(device)) || 
+                        !strcmp("move", udev_device_get_action(device)))
+                    configure_device(device);        
+                udev_device_unref(device);
             }
         }
     }

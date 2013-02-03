@@ -136,68 +136,113 @@ uint8_t check_for_existing_devices(struct udev *u_context){
 }
 
 uint8_t monitor_devices(struct udev *u_context){
-    struct udev_monitor *u_monitor = NULL;
-    int32_t efd = 0, udev_fd = 0, nfds = 0;
-    struct epoll_event ev;
+    struct udev_monitor *u_monitor_k = NULL, *u_monitor_u = NULL, 
+                        *u_monitor = NULL;
+    int32_t efd = 0, udev_fd_k = 0, udev_fd_u = 0, nfds = 0, i = 0;
+    struct epoll_event ev, events[2];
     struct udev_device *device = NULL;
 
     //Acquire context, add filter and bind to start receiving
     //Udev does not behave consistently with some devices (particularily some 
     //modems). I need to listen to kernel to get a reliable notification.
-    if((u_monitor = udev_monitor_new_from_netlink(u_context, "kernel")) == 0){
+    //TODO: Clean up
+    if((u_monitor_u = udev_monitor_new_from_netlink(u_context, "udev")) == 0){
+        DEBUG_PRINT(stderr, "Could not get udev monitor (udev)\n");
+        return -1;
+    }
+
+    if((u_monitor_k = udev_monitor_new_from_netlink(u_context, "kernel")) == 0){
         DEBUG_PRINT(stderr, "Could not get udev monitor\n");
         return -1;
     }
 
-    if(udev_monitor_filter_add_match_subsystem_devtype(u_monitor, "net", NULL) 
+    if(udev_monitor_filter_add_match_subsystem_devtype(u_monitor_u, "net", NULL) 
             < 0){
-        DEBUG_PRINT(stderr, "Could not add udev filter\n");
-        udev_monitor_unref(u_monitor);
+        DEBUG_PRINT(stderr, "Could not add udev filter (udev)\n");
+        udev_monitor_unref(u_monitor_u);
         return -1;
     }
 
-    if(udev_monitor_enable_receiving(u_monitor) < 0){
-        DEBUG_PRINT(stderr, "Could not start receiving events\n");
-        udev_monitor_unref(u_monitor);
+    if(udev_monitor_filter_add_match_subsystem_devtype(u_monitor_k, "net", NULL) 
+            < 0){
+        DEBUG_PRINT(stderr, "Could not add udev filter (kernel)\n");
+        udev_monitor_unref(u_monitor_k);
+        return -1;
+    }
+
+    if(udev_monitor_enable_receiving(u_monitor_u) < 0){
+        DEBUG_PRINT(stderr, "Could not start receiving events (udev)\n");
+        udev_monitor_unref(u_monitor_u);
+        udev_monitor_unref(u_monitor_k);
+        return -1;
+    }
+
+    if(udev_monitor_enable_receiving(u_monitor_k) < 0){
+        DEBUG_PRINT(stderr, "Could not start receiving events (kernel)\n");
+        udev_monitor_unref(u_monitor_u);
+        udev_monitor_unref(u_monitor_k);
         return -1;
     }
 
     //Epoll is so much nicer than select
     if((efd = epoll_create(1)) < 0){
         DEBUG_PRINT(stderr, "Epoll create failed\n");
-        udev_monitor_unref(u_monitor);
+        udev_monitor_unref(u_monitor_u);
+        udev_monitor_unref(u_monitor_k);
         return -1;
     }
 
-    udev_fd = udev_monitor_get_fd(u_monitor);
+    udev_fd_u = udev_monitor_get_fd(u_monitor_u);
     memset(&ev, 0, sizeof(ev));
     ev.events = EPOLLIN;
-    ev.data.fd = udev_fd;
+    ev.data.fd = udev_fd_u;
 
-    if(epoll_ctl(efd, EPOLL_CTL_ADD, udev_fd, &ev) < 0){
-        DEBUG_PRINT(stderr, "Epoll_ctl failed\n");
-        udev_monitor_unref(u_monitor);
+    if(epoll_ctl(efd, EPOLL_CTL_ADD, udev_fd_u, &ev) < 0){
+        DEBUG_PRINT(stderr, "Epoll_ctl failed (udev)\n");
+        udev_monitor_unref(u_monitor_k);
+        udev_monitor_unref(u_monitor_u);
+        return -1;
+    }
+
+    udev_fd_k = udev_monitor_get_fd(u_monitor_k);
+    memset(&ev, 0, sizeof(ev));
+    ev.events = EPOLLIN;
+    ev.data.fd = udev_fd_k;
+
+    if(epoll_ctl(efd, EPOLL_CTL_ADD, udev_fd_k, &ev) < 0){
+        DEBUG_PRINT(stderr, "Epoll_ctl failed (kernel)\n");
+        udev_monitor_unref(u_monitor_k);
+        udev_monitor_unref(u_monitor_u);
         return -1;
     }
 
     while(1){
-        if((nfds = epoll_wait(efd, &ev, 1, -1)) < 0){
+        if((nfds = epoll_wait(efd, events, 2, -1)) < 0){
             DEBUG_PRINT(stderr, "epoll_wait failed\n");
-            udev_monitor_unref(u_monitor);
+            udev_monitor_unref(u_monitor_k);
+            udev_monitor_unref(u_monitor_u);
             return -1;
         } else {
-            if((device = udev_monitor_receive_device(u_monitor)) != NULL){
-                //Listen for both events due to udevs inconsistent behavior
-                if(!strcmp("add", udev_device_get_action(device)) || 
-                        !strcmp("move", udev_device_get_action(device)))
-                    configure_device(device);        
-                udev_device_unref(device);
+            for(i = 0; i<nfds; i++){
+                if(events[i].data.fd == udev_fd_u)
+                    u_monitor = u_monitor_u;
+                else
+                    u_monitor = u_monitor_k;
+
+                if((device = udev_monitor_receive_device(u_monitor)) != NULL){
+                    //Listen for both events due to udevs inconsistent behavior
+                    if(!strcmp("add", udev_device_get_action(device)) || 
+                            !strcmp("move", udev_device_get_action(device)))
+                        configure_device(device);        
+                    udev_device_unref(device);
+                }
             }
         }
     }
 
     //Will never be reached, but keep for the sake of completion
-    udev_monitor_unref(u_monitor);
+    udev_monitor_unref(u_monitor_u);
+    udev_monitor_unref(u_monitor_k);
     return 0;
 }
 

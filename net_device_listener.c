@@ -9,6 +9,14 @@
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <sys/epoll.h>
+#include <time.h>
+
+#define LOG_PREFIX "[%d:%d:%d %d/%d/%d]: "
+#define DEBUG_PRINT2(fd, ...){fprintf(fd, __VA_ARGS__);fflush(fd);}
+//The ## is there so that I dont have to fake an argument when I use the macro
+//on string without arguments!
+#define DEBUG_PRINT(fd, _fmt, ...){time_t rawtime; struct tm *curtime; time(&rawtime); curtime = gmtime(&rawtime); DEBUG_PRINT2(fd, LOG_PREFIX _fmt, curtime->tm_hour, curtime->tm_min, curtime->tm_sec, curtime->tm_mday, curtime->tm_mon + 1, 1900 + curtime->tm_year, ##__VA_ARGS__);}
+
 
 uint8_t set_interface_up_ioctl(const char *devname){
     struct ifreq ifr;
@@ -39,7 +47,7 @@ uint8_t set_interface_up_ioctl(const char *devname){
             return -1;
         }
     } else
-        fprintf(stderr, "Interface is already up\n");
+        DEBUG_PRINT(stderr, "Interface is already up\n");
 
     return 0;
 }
@@ -54,10 +62,10 @@ void configure_device(struct udev_device *device){
             "INTERFACE");
     ifindex = udev_device_get_property_value(device, "IFINDEX");
     if_idx = atoi(ifindex);
-    fprintf(stderr, "Found interface %s (idx %d). Will change state if "
+    DEBUG_PRINT(stderr, "Found interface %s (idx %d). Will change state if "
             "needed\n", interface, if_idx);
     if(set_interface_up_ioctl(interface))
-        fprintf(stderr, "Could not complete set_up on interface\n");
+        DEBUG_PRINT(stderr, "Could not complete set_up on interface\n");
 }
 
 //Check for existing cdc_ether interfaces and set them as up
@@ -69,18 +77,18 @@ uint8_t check_for_existing_devices(struct udev *u_context){
     
     //Configure libudev
     if((ue_context = udev_enumerate_new(u_context)) == NULL){
-        fprintf(stderr, "Could not create udev enumerate context\n");
+        DEBUG_PRINT(stderr, "Could not create udev enumerate context\n");
         return -1;
     }
 
     if(udev_enumerate_add_match_subsystem(ue_context, "net")){
-        fprintf(stderr, "Could not add subsystem match\n");
+        DEBUG_PRINT(stderr, "Could not add subsystem match\n");
         udev_enumerate_unref(ue_context);
         return -1;
     }
 
     if(udev_enumerate_scan_devices(ue_context)){
-        fprintf(stderr, "Could not scan context\n");
+        DEBUG_PRINT(stderr, "Could not scan context\n");
         udev_enumerate_unref(ue_context);
         return -1;
     }
@@ -113,26 +121,26 @@ uint8_t monitor_devices(struct udev *u_context){
     //Udev does not behave consistently with some devices (particularily some 
     //modems). I need to listen to kernel to get a reliable notification.
     if((u_monitor = udev_monitor_new_from_netlink(u_context, "kernel")) == 0){
-        fprintf(stderr, "Could not get udev monitor\n");
+        DEBUG_PRINT(stderr, "Could not get udev monitor\n");
         return -1;
     }
 
     if(udev_monitor_filter_add_match_subsystem_devtype(u_monitor, "net", NULL) 
             < 0){
-        fprintf(stderr, "Could not add udev filter\n");
+        DEBUG_PRINT(stderr, "Could not add udev filter\n");
         udev_monitor_unref(u_monitor);
         return -1;
     }
 
     if(udev_monitor_enable_receiving(u_monitor) < 0){
-        fprintf(stderr, "Could not start receiving events\n");
+        DEBUG_PRINT(stderr, "Could not start receiving events\n");
         udev_monitor_unref(u_monitor);
         return -1;
     }
 
     //Epoll is so much nicer than select
     if((efd = epoll_create(1)) < 0){
-        fprintf(stderr, "Epoll create failed\n");
+        DEBUG_PRINT(stderr, "Epoll create failed\n");
         udev_monitor_unref(u_monitor);
         return -1;
     }
@@ -143,18 +151,19 @@ uint8_t monitor_devices(struct udev *u_context){
     ev.data.fd = udev_fd;
 
     if(epoll_ctl(efd, EPOLL_CTL_ADD, udev_fd, &ev) < 0){
-        fprintf(stderr, "Epoll_ctl failed\n");
+        DEBUG_PRINT(stderr, "Epoll_ctl failed\n");
         udev_monitor_unref(u_monitor);
         return -1;
     }
 
     while(1){
         if((nfds = epoll_wait(efd, &ev, 1, -1)) < 0){
-            fprintf(stderr, "epoll_wait failed\n");
+            DEBUG_PRINT(stderr, "epoll_wait failed\n");
             udev_monitor_unref(u_monitor);
             return -1;
         } else {
             if((device = udev_monitor_receive_device(u_monitor)) != NULL){
+                //Listen for both events due to udevs inconsistent behavior
                 if(!strcmp("add", udev_device_get_action(device)) || 
                         !strcmp("move", udev_device_get_action(device)))
                     configure_device(device);        
@@ -171,18 +180,18 @@ uint8_t monitor_devices(struct udev *u_context){
 int main(int argc, char *argv[]){
     struct udev *u_context = NULL;
     if((u_context = udev_new()) == NULL){
-        fprintf(stderr, "Could not create udev context\n");
+        DEBUG_PRINT(stderr, "Could not create udev context\n");
         exit(EXIT_FAILURE);
     }
 
     if(check_for_existing_devices(u_context)){
-        fprintf(stderr, "Check for existing devices could not be performed, " 
+        DEBUG_PRINT(stderr, "Check for existing devices could not be performed, " 
                 "aborting\n");
         exit(EXIT_FAILURE);
     }
 
     if(monitor_devices(u_context)){
-        fprintf(stderr, "Monitoring of devices failed\n");
+        DEBUG_PRINT(stderr, "Monitoring of devices failed\n");
         exit(EXIT_FAILURE);
     }
 

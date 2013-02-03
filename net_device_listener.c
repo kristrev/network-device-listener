@@ -10,13 +10,20 @@
 #include <sys/ioctl.h>
 #include <sys/epoll.h>
 #include <time.h>
+#include <errno.h>
 
 #define LOG_PREFIX "[%d:%d:%d %d/%d/%d]: "
 #define DEBUG_PRINT2(fd, ...){fprintf(fd, __VA_ARGS__);fflush(fd);}
 //The ## is there so that I dont have to fake an argument when I use the macro
 //on string without arguments!
-#define DEBUG_PRINT(fd, _fmt, ...){time_t rawtime; struct tm *curtime; time(&rawtime); curtime = gmtime(&rawtime); DEBUG_PRINT2(fd, LOG_PREFIX _fmt, curtime->tm_hour, curtime->tm_min, curtime->tm_sec, curtime->tm_mday, curtime->tm_mon + 1, 1900 + curtime->tm_year, ##__VA_ARGS__);}
-
+#define DEBUG_PRINT(fd, _fmt, ...){\
+    time_t rawtime;\
+    struct tm *curtime;\
+    time(&rawtime);\
+    curtime = gmtime(&rawtime);\
+    DEBUG_PRINT2(fd, LOG_PREFIX _fmt, curtime->tm_hour, curtime->tm_min,\
+            curtime->tm_sec, curtime->tm_mday, curtime->tm_mon + 1,\
+            1900 + curtime->tm_year, ##__VA_ARGS__);}
 
 uint8_t set_interface_up_ioctl(const char *devname){
     struct ifreq ifr;
@@ -28,13 +35,13 @@ uint8_t set_interface_up_ioctl(const char *devname){
 
     //PF_INET == AF_INET
     if((fd = socket(PF_INET, SOCK_DGRAM, 0)) < 0){
-        perror("socket: ");
+        DEBUG_PRINT(stderr, "socket: %s\n", strerror(errno));
         return -1;
     }
 
     //Get the flags, so that I am sure I dont overwrite anything
     if(ioctl(fd, SIOCGIFFLAGS, &ifr) < 0){
-        perror("ioctl (get): ");
+        DEBUG_PRINT(stderr, "ioctl (get): %s\n", strerror(errno));
         return -1;
     }
 
@@ -43,7 +50,7 @@ uint8_t set_interface_up_ioctl(const char *devname){
         ifr.ifr_flags |= IFF_UP;
         
         if(ioctl(fd, SIOCSIFFLAGS, &ifr) < 0){
-            perror("ioctl (set): ");
+            DEBUG_PRINT(stderr, "ioctl (set): %s\n", strerror(errno));
             return -1;
         }
     } else
@@ -177,8 +184,39 @@ uint8_t monitor_devices(struct udev *u_context){
     return 0;
 }
 
+void usage(){
+    printf("net_device_listener supports the following arguments\n");
+    printf("-d : run as daemon. Log messages will be written to /var/log/net_" \
+            "device_listener.log\n");
+    printf("-h : this output\n");
+}
+
 int main(int argc, char *argv[]){
     struct udev *u_context = NULL;
+    int32_t c;
+    uint8_t run_as_daemon = 0;
+
+    while((c = getopt(argc, argv, "dh")) != -1){
+        switch(c){
+            case 'd':
+                run_as_daemon = 1;
+                break;
+            case 'h':
+                usage();
+                exit(EXIT_SUCCESS);
+                break;
+            default:
+                DEBUG_PRINT(stderr, "Unknown parameter\n");
+                usage();
+                break;
+        } 
+    }
+
+    if(run_as_daemon){
+        daemon(0, 0);
+        freopen("/var/log/net_device_listener.log", "a", stderr);
+    }
+
     if((u_context = udev_new()) == NULL){
         DEBUG_PRINT(stderr, "Could not create udev context\n");
         exit(EXIT_FAILURE);

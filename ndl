@@ -16,7 +16,7 @@
 case "$1" in
     start)
         echo "Starting Network Device Listener as daemon ..." #Expand variable
-        if start-stop-daemon --oknodo --exec /usr/local/bin/network_device_listener --start -- -d; then  #Start-deamen is fantastic
+        if start-stop-daemon --oknodo --exec /usr/local/bin/net_device_listener --start -- -d; then  #Start-deamen is fantastic
             echo "Network Device Listener started sucessfully."
         else
             echo "Network Device Listener failed to start."
@@ -24,7 +24,7 @@ case "$1" in
         ;; 
     stop)
         echo "Stopping Network Device Listener ..."
-        if start-stop-daemon --oknodo --exec /usr/local/bin/network_device_listener --stop; then
+        if start-stop-daemon --oknodo --exec /usr/local/bin/net_device_listener --stop; then
             echo "Network Device Listener was stopped."
         else
             echo "Network Device Listener could not be stopped sucessfully."
@@ -33,7 +33,7 @@ case "$1" in
     restart|force-reload)
         #Put these as functions
         echo "Stopping Network Device Listener ..."
-        if start-stop-daemon --oknodo --exec /usr/local/bin/network_device_listener --stop; then
+        if start-stop-daemon --oknodo --exec /usr/local/bin/net_device_listener --stop; then
             echo "Network Device Listener was stopped."
         else
             echo "Network Device Listener could not be stopped sucessfully."
@@ -41,7 +41,7 @@ case "$1" in
         fi
 
         echo "Starting Network Device Listener as daemon ..." #Expand variable
-        if start-stop-daemon --oknodo --exec /usr/local/bin/network_device_listener --start -- -d; then  #Start-deamen is fantastic
+        if start-stop-daemon --oknodo --exec /usr/local/bin/net_device_listener --start -- -d; then  #Start-deamen is fantastic
             echo "Network Device Listener started sucessfully."
         else
             echo "Network Device Listener failed to start."
